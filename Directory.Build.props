@@ -8,6 +8,7 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <VersionPrefix>1.0.0</VersionPrefix>
+    <VersionSuffix>beta3</VersionSuffix>
     <PackageReleaseNotes>Example release notes</PackageReleaseNotes>
   </PropertyGroup>
   <PropertyGroup>
