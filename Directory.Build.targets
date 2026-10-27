@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup Condition="'$(PublishAot)' == 'true'">
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <!-- Keep beta3's dependency warnings visible. publish-native.ps1 rejects new ones. -->
+    <IlcTreatWarningsAsErrors>false</IlcTreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>
