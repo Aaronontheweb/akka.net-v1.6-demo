@@ -11,5 +11,5 @@ public static class UserEvents
     public sealed record ChangedUserName([property: AkkaField(0)] UserId UserId,  [property: AkkaField(1)] UserName NewUserName, [property: AkkaField(2)] UserName OldUserName) : IUserCommand;
     
     [AkkaSerializable(Manifest = "lc-e")]
-    public sealed record LeaveChat([property: AkkaField(0)] UserId UserId) : IUserCommand;
+    public sealed record LeftChat([property: AkkaField(0)] UserId UserId) : IUserCommand;
 }
