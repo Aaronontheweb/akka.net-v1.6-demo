@@ -82,7 +82,7 @@ public sealed class ChatTranscriptTests
     }
 
     [Fact]
-    public void Saving_waits_for_server_acceptance_and_exit_still_works_during_edit()
+    public void Saving_waits_for_server_acceptance()
     {
         var state = ConnectedState();
         var id = MessageId.Next();
@@ -102,7 +102,6 @@ public sealed class ChatTranscriptTests
         Assert.Null(state.Snapshot.EditingMessage);
         state.BeginEdit();
         Assert.Equal("revised", state.EditingText);
-        Assert.IsType<ChatUserActor.Disconnect>(state.Submit("/exit"));
     }
 
     [Fact]
@@ -137,18 +136,15 @@ public sealed class ChatTranscriptTests
     }
 
     [Fact]
-    public void Commands_wait_for_connection_but_exit_is_always_available()
+    public void Commands_wait_for_connection()
     {
         var state = new ChatClientState(Alice);
         state.Apply(new ChatUserActor.Connecting());
         Assert.Null(state.Submit("hello"));
-        Assert.IsType<ChatUserActor.Disconnect>(state.Submit("/exit"));
         state.Apply(new ChatUserActor.ConnectionFailed());
         Assert.Null(state.Submit("hello"));
-        Assert.IsType<ChatUserActor.Disconnect>(state.Submit("/exit"));
         state = ConnectedState();
         state.Apply(new ChatUserActor.Disconnected());
         Assert.Null(state.Submit("hello"));
-        Assert.IsType<ChatUserActor.Disconnect>(state.Submit("/exit"));
     }
 }

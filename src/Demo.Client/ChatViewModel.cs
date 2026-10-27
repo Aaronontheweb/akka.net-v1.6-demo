@@ -61,9 +61,8 @@ public sealed class ChatViewModel(IRequiredActor<ChatUserActor> requiredUser, Us
 
     public void Submit(string text)
     {
-        var command = _state.Submit(text);
-        if (command is ChatUserActor.Disconnect) RequestShutdown();
-        else if (command is not null) _user.Tell(command);
+        if (text.Trim() == "/exit") RequestShutdown();
+        else if (_state.Submit(text) is { } command) _user.Tell(command);
         Refresh();
     }
 

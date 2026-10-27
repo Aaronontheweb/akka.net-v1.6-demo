@@ -70,11 +70,10 @@ public sealed class ChatClientState(UserId id)
         }
     }
 
-    public object? Submit(string text)
+    public IWithUserId? Submit(string text)
     {
         text = text.Trim();
         if (text.Length == 0) return null;
-        if (text == "/exit") return new ChatUserActor.Disconnect();
         if (!_joined)
         {
             AddNotice("Waiting for the server…");
@@ -87,7 +86,7 @@ public sealed class ChatClientState(UserId id)
             : new SendMessage(MessageId.Next(), id, new MessageContent(text));
     }
 
-    private object? ParseCommand(string text)
+    private IWithUserId? ParseCommand(string text)
     {
         switch (text.Split(' ', 2, StringSplitOptions.TrimEntries))
         {
