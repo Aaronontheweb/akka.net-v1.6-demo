@@ -63,7 +63,7 @@ The report is written to `artifacts/native-sizes.md`. CI captures it for every t
 
 - `Demo.Core`: the existing commands, events, value types, source-generated serializer, and shared Artery configuration.
 - `Demo.Server`: one actor tracks users and message ownership, validates commands, and broadcasts events.
-- `Demo.Client`: Termina sends local input and edit messages to its local `ChatUserActor`. That actor owns the last 200 transcript entries, tracks messages by ID and authors by user ID, and handles the network protocol. It sends local UI snapshots through Termina's UI dispatcher. The page owns layout and input; the ViewModel holds the current snapshot and edit input state.
+- `Demo.Client`: `ChatUserActor` handles the connection and forwards server events through a local channel. The ViewModel applies those events to its `ChatClientState`, which owns the last 200 transcript entries, display names, and editing state. It sends existing protocol commands back through the actor. The page owns layout and input; state updates run on Termina's UI dispatcher.
 
 The wire protocol is unchanged: `JoinChat`, `ChangeUserName`, `LeaveChat`, `SendMessage`, `EditMessage`, their existing events, and `ChatResponse`. Joining sends the newcomer existing users' `JoinedChat` events. Successful and rejected commands return `ChatResponse` with `OriginalCommand`. The server watches client actors to remove disconnected users. There is no persistence, message history replay, or automatic reconnect.
 
@@ -76,7 +76,7 @@ dotnet test -c Release
 python3 scripts/smoke-chat.py
 ```
 
-The Akka.Hosting.TestKit suite covers every protocol message and every polymorphic response member; records and readonly record structs; GUIDs; Unicode and long strings; empty/default IDs; enums, including unknown values; nullable fields; actor references; unknown fields and missing optional fields; malformed payloads; and Hosting serializer registration with reflection-based loading disabled. A second actor system verifies every message and response union member over an actual Artery TCP connection. Actor tests cover chat behavior, ownership validation, and local TUI input translation.
+The Akka.Hosting.TestKit suite covers every protocol message and every polymorphic response member; records and readonly record structs; GUIDs; Unicode and long strings; empty/default IDs; enums, including unknown values; nullable fields; actor references; unknown fields and missing optional fields; malformed payloads; and Hosting serializer registration with reflection-based loading disabled. A second actor system verifies every message and response union member over an actual Artery TCP connection. Actor tests cover chat behavior, ownership validation, channel delivery, and shutdown. Client state tests cover input translation, transcript updates, renaming, and editing.
 
 The native smoke test starts the server and real TUI clients in pseudo-terminals on each supported platform. It verifies joining, chat, relabeling older messages after a rename, in-place edits, edit highlighting and cancellation, single-press Ctrl+C in normal chat and edit mode, `/exit`, and DeathWatch cleanup after a client crashes. CI runs it with both default and raw terminal input. Server errors fail the test.
 

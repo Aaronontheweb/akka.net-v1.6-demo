@@ -1,39 +1,33 @@
+using System.Threading.Channels;
 using Akka.Actor;
 using Demo.Core;
 using Demo.Core.Chat;
 using Demo.Core.Users;
-using static Demo.Core.Chat.ChatCommands;
-using static Demo.Core.Chat.ChatEvents;
 using static Demo.Core.Users.UserCommands;
-using static Demo.Core.Users.UserEvents;
 
 namespace Demo.Client;
 
 public sealed class ChatUserActor : ReceiveActor, IWithTimers
 {
-    private enum TimerKey { Connection, Exit }
-    public ITimerScheduler Timers { get; set; } = null!;
-
-    // Local UI messages. None of these cross the network.
-    public sealed record Connect(Action<ChatTranscript> Display, Action Exit, Action<string?>? EditChanged = null);
-    public sealed record Submit(string Text);
-    public sealed record BeginEdit;
-    public sealed record CancelEdit;
+    // These messages and the channel stay inside the client process.
+    public sealed record Connect(ChannelWriter<ClientEvent> Events);
     public sealed record Disconnect;
     private sealed record ConnectionTimedOut;
     private sealed record ExitTimedOut;
+    private enum TimerKey { Connection, Exit }
 
-    private readonly Dictionary<UserId, UserName> _names = new();
-    private readonly List<ChatLine> _lines = new();
+    private sealed class Connection(ChannelWriter<ClientEvent> events)
+    {
+        public ChannelWriter<ClientEvent> Events { get; } = events;
+        public bool Joined { get; set; }
+    }
+
     private readonly ActorSelection _server;
     private readonly UserId _id;
     private readonly UserName _name;
-    private Action<ChatTranscript> _display = _ => { };
-    private Action<string?> _editChanged = _ => { };
-    private MessageId? _editingMessage;
-    private Action _exit = () => { };
-    private bool _joined;
-    private MessageId _lastMessage;
+    private Connection? _connection;
+
+    public ITimerScheduler Timers { get; set; } = null!;
 
     public ChatUserActor(string serverPath, UserId id, UserName name)
     {
@@ -43,150 +37,65 @@ public sealed class ChatUserActor : ReceiveActor, IWithTimers
 
         Receive<Connect>(message =>
         {
-            _display = message.Display;
-            _exit = message.Exit;
-            _editChanged = message.EditChanged ?? (_ => { });
-            AddNotice("Connecting…");
+            if (_connection is not null) return;
+            _connection = new Connection(message.Events);
+            Publish(new ClientEvent.Connecting());
             _server.Tell(new JoinChat(_id, _name, Self));
             Timers.StartSingleTimer(TimerKey.Connection, new ConnectionTimedOut(), TimeSpan.FromSeconds(10));
         });
-        Receive<ConnectionTimedOut>(_ => AddNotice("Could not join the server. /exit to close and try again."));
-        Receive<ExitTimedOut>(_ => _exit());
-        Receive<Submit>(message => SubmitText(message.Text));
-        Receive<BeginEdit>(_ => StartEditing());
-        Receive<CancelEdit>(_ => FinishEditing());
+        Receive<ConnectionTimedOut>(_ => Publish(new ClientEvent.ConnectionFailed()));
+        Receive<ExitTimedOut>(_ => FinishDisconnect());
         Receive<Disconnect>(_ => DisconnectFromChat());
-
-        Receive<JoinedChat>(message =>
-        {
-            _names[message.UserId] = message.UserName;
-            AddNotice($"* {message.UserName.Value} joined");
-        });
-        Receive<ChangedUserName>(message =>
-        {
-            _names[message.UserId] = message.NewUserName;
-            AddNotice($"* {message.OldUserName.Value} is now {message.NewUserName.Value}");
-        });
-        Receive<LeftChat>(message =>
-        {
-            AddNotice($"* {NameOf(message.UserId)} left");
-            // Keep the last known name for messages left in the transcript.
-        });
-        Receive<MessageSent>(message =>
-        {
-            if (message.UserId == _id) _lastMessage = message.MessageId;
-            AddLine(new ChatLine(message.Message.Content, message.UserId, message.MessageId));
-        });
-        Receive<MessageEdited>(message =>
-        {
-            var index = _lines.FindIndex(line => line.MessageId == message.MessageId && line.UserId == message.UserId);
-            if (index < 0) return; // The message may have scrolled out of retained history.
-            _lines[index] = _lines[index] with { Text = message.NewMessage.Content, Edited = true };
-            RefreshTranscript();
-        });
+        Receive<IChatCommand>(ForwardCommand);
+        Receive<ChangeUserName>(ForwardCommand);
+        Receive<IChatEvent>(message => Publish(new ClientEvent.Chat(message)));
+        Receive<IUserEvent>(message => Publish(new ClientEvent.User(message)));
         Receive<ChatResponse>(response =>
         {
-            if (response.IsError)
-            {
-                AddNotice($"Error: {response.ErrorMessage}");
-                return;
-            }
-
+            Publish(new ClientEvent.Response(response));
+            if (response.IsError || _connection is null) return;
             switch (response.OriginalCommand)
             {
                 case JoinChat:
                     Timers.Cancel(TimerKey.Connection);
-                    _joined = true;
-                    AddNotice("Connected. Type a message, /nick name, /edit text, or /exit.");
-                    break;
-                case EditMessage edit when edit.MessageId == _editingMessage:
-                    FinishEditing();
+                    _connection.Joined = true;
                     break;
                 case LeaveChat:
-                    Timers.Cancel(TimerKey.Exit);
-                    _joined = false;
-                    _exit();
+                    FinishDisconnect();
                     break;
             }
         });
     }
 
-    private void SubmitText(string text)
-    {
-        text = text.Trim();
-        if (text.Length == 0) return;
-        if (text == "/exit")
-        {
-            DisconnectFromChat();
-            return;
-        }
-        if (!_joined)
-        {
-            AddNotice("Waiting for the server…");
-            return;
-        }
+    private void Publish(ClientEvent message) => _connection?.Events.TryWrite(message);
 
-        if (_editingMessage is { } editing)
-            _server.Tell(new EditMessage(editing, _id, new MessageContent(text)));
-        else if (text.StartsWith("/nick ", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(text[6..]))
-            _server.Tell(new ChangeUserName(_id, new UserName(text[6..].Trim())));
-        else if (text.StartsWith("/edit ", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(text[6..]))
-        {
-            if (_lastMessage == MessageId.Empty) AddNotice("Send a message before editing it.");
-            else _server.Tell(new EditMessage(_lastMessage, _id, new MessageContent(text[6..].Trim())));
-        }
-        else if (text.StartsWith('/')) AddNotice("Commands: /nick name, /edit text (your last message), /exit");
-        else _server.Tell(new SendMessage(MessageId.Next(), _id, new MessageContent(text)));
-    }
-
-    private void StartEditing()
+    private void ForwardCommand(IWithUserId command)
     {
-        if (!_joined) return;
-        var line = _lines.LastOrDefault(line => line.UserId == _id && line.MessageId is not null);
-        if (line is null)
-        {
-            AddNotice("Send a message before editing it.");
-            return;
-        }
-        _editingMessage = line.MessageId;
-        _editChanged(line.Text);
-        RefreshTranscript();
-    }
-
-    private void FinishEditing()
-    {
-        _editingMessage = null;
-        _editChanged(null);
-        RefreshTranscript();
+        if (_connection is { Joined: true } && !Timers.IsTimerActive(TimerKey.Exit))
+            _server.Tell(command);
     }
 
     private void DisconnectFromChat()
     {
-        if (!_joined) { _exit(); return; }
+        if (_connection is null || Timers.IsTimerActive(TimerKey.Exit)) return;
+        // Also undo a pending join: both commands reach the server from this actor in order.
         _server.Tell(new LeaveChat(_id));
-        if (!Timers.IsTimerActive(TimerKey.Exit))
-            Timers.StartSingleTimer(TimerKey.Exit, new ExitTimedOut(), TimeSpan.FromSeconds(2));
+        if (!_connection.Joined) FinishDisconnect();
+        else Timers.StartSingleTimer(TimerKey.Exit, new ExitTimedOut(), TimeSpan.FromSeconds(2));
     }
 
-    private void AddNotice(string text) => AddLine(new ChatLine(text));
-
-    private void AddLine(ChatLine line)
+    private void FinishDisconnect()
     {
-        _lines.Add(line);
-        if (_lines.Count > 200) _lines.RemoveAt(0);
-        RefreshTranscript();
+        Timers.CancelAll();
+        Publish(new ClientEvent.Disconnected());
+        _connection?.Events.TryComplete();
+        _connection = null;
     }
-
-    private void RefreshTranscript() => _display(new ChatTranscript(_lines.Select(line =>
-        line.UserId is { } id
-            ? line with { Text = $"{NameOf(id)}: {line.Text}{(line.Edited ? " *" : "")}" }
-            : line).ToArray(), _editingMessage));
-
-    private string NameOf(UserId id) => _names.TryGetValue(id, out var name) ? name.Value : id.Value;
 
     protected override void PostStop()
     {
-        if (_joined) _server.Tell(new LeaveChat(_id), Self);
+        if (_connection is not null) _server.Tell(new LeaveChat(_id), Self);
+        FinishDisconnect();
         base.PostStop();
     }
 }
