@@ -9,8 +9,11 @@ using static Demo.Core.Users.UserEvents;
 
 namespace Demo.Client;
 
-public sealed class ChatUserActor : ReceiveActor
+public sealed class ChatUserActor : ReceiveActor, IWithTimers
 {
+    private enum TimerKey { Connection, Exit }
+    public ITimerScheduler Timers { get; set; } = null!;
+
     // Local UI messages. None of these cross the network.
     public sealed record Connect(Action<ChatTranscript> Display, Action Exit, Action<string?>? EditChanged = null);
     public sealed record Submit(string Text);
@@ -31,8 +34,6 @@ public sealed class ChatUserActor : ReceiveActor
     private Action _exit = () => { };
     private bool _joined;
     private MessageId _lastMessage;
-    private ICancelable? _connectionTimeout;
-    private ICancelable? _exitTimeout;
 
     public ChatUserActor(string serverPath, UserId id, UserName name)
     {
@@ -47,8 +48,7 @@ public sealed class ChatUserActor : ReceiveActor
             _editChanged = message.EditChanged ?? (_ => { });
             AddNotice("Connecting…");
             _server.Tell(new JoinChat(_id, _name, Self));
-            _connectionTimeout = Context.System.Scheduler.ScheduleTellOnceCancelable(
-                TimeSpan.FromSeconds(10), Self, new ConnectionTimedOut(), Self);
+            Timers.StartSingleTimer(TimerKey.Connection, new ConnectionTimedOut(), TimeSpan.FromSeconds(10));
         });
         Receive<ConnectionTimedOut>(_ => AddNotice("Could not join the server. /exit to close and try again."));
         Receive<ExitTimedOut>(_ => _exit());
@@ -95,7 +95,7 @@ public sealed class ChatUserActor : ReceiveActor
             switch (response.OriginalCommand)
             {
                 case JoinChat:
-                    _connectionTimeout?.Cancel();
+                    Timers.Cancel(TimerKey.Connection);
                     _joined = true;
                     AddNotice("Connected. Type a message, /nick name, /edit text, or /exit.");
                     break;
@@ -103,7 +103,7 @@ public sealed class ChatUserActor : ReceiveActor
                     FinishEditing();
                     break;
                 case LeaveChat:
-                    _exitTimeout?.Cancel();
+                    Timers.Cancel(TimerKey.Exit);
                     _joined = false;
                     _exit();
                     break;
@@ -164,8 +164,8 @@ public sealed class ChatUserActor : ReceiveActor
     {
         if (!_joined) { _exit(); return; }
         _server.Tell(new LeaveChat(_id));
-        _exitTimeout ??= Context.System.Scheduler.ScheduleTellOnceCancelable(
-            TimeSpan.FromSeconds(2), Self, new ExitTimedOut(), Self);
+        if (!Timers.IsTimerActive(TimerKey.Exit))
+            Timers.StartSingleTimer(TimerKey.Exit, new ExitTimedOut(), TimeSpan.FromSeconds(2));
     }
 
     private void AddNotice(string text) => AddLine(new ChatLine(text));
@@ -186,8 +186,6 @@ public sealed class ChatUserActor : ReceiveActor
 
     protected override void PostStop()
     {
-        _connectionTimeout?.Cancel();
-        _exitTimeout?.Cancel();
         if (_joined) _server.Tell(new LeaveChat(_id), Self);
         base.PostStop();
     }
