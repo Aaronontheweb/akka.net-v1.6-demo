@@ -1,3 +1,4 @@
+#!/usr/bin/env pwsh
 param(
     [Parameter(Mandatory = $true)]
     [string] $RuntimeIdentifier
@@ -9,8 +10,13 @@ $baseline = Get-Content (Join-Path $PSScriptRoot 'aot-warnings.txt')
 
 foreach ($app in @('Server', 'Client')) {
     $destination = Join-Path $root "artifacts/$($app.ToLowerInvariant())"
-    $output = & dotnet publish (Join-Path $root "src/Demo.$app") -c Release -r $RuntimeIdentifier -o $destination 2>&1
-    $output | Write-Host
+    $output = [System.Collections.Generic.List[string]]::new()
+    & dotnet publish (Join-Path $root "src/Demo.$app") -c Release -r $RuntimeIdentifier -o $destination 2>&1 |
+        ForEach-Object {
+            $line = $_.ToString()
+            $output.Add($line)
+            Write-Host $line
+        }
     if ($LASTEXITCODE -ne 0) { throw "Native publish failed for $app" }
 
     foreach ($line in $output) {

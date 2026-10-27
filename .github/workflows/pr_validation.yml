@@ -51,18 +51,72 @@ jobs:
       - name: "dotnet pack"
         run: dotnet pack -c Release -o ./bin/nuget
 
+  aot:
+    name: AOT-${{ matrix.rid }}
+    needs: test
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            arch: X64
+          - os: ubuntu-latest
+            rid: linux-x64
+            arch: X64
+          - os: macos-15
+            rid: osx-arm64
+            arch: Arm64
+
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v7.0.1
+        with:
+          lfs: true
+          fetch-depth: 0
+
+      - name: "Install .NET SDK"
+        uses: actions/setup-dotnet@v6.0.0
+        with:
+          global-json-file: "./global.json"
+
+      - name: "Verify native runner architecture"
+        shell: pwsh
+        run: |
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne '${{ matrix.arch }}') {
+            throw 'The AOT launch test must run on the target architecture.'
+          }
+
+      - name: "Install Python"
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: "Install Windows pseudo-terminal support"
+        if: runner.os == 'Windows'
+        run: python -m pip install pywinpty==3.1.0
+
       - name: "Publish native server and client"
         shell: pwsh
-        run: ./scripts/publish-native.ps1 -RuntimeIdentifier ${{ runner.os == 'Windows' && 'win-x64' || 'linux-x64' }}
+        run: ./scripts/publish-native.ps1 -RuntimeIdentifier ${{ matrix.rid }}
 
       - name: "Run native TUI clients over Artery"
-        if: runner.os == 'Linux'
-        run: python3 scripts/smoke-chat.py
+        run: python scripts/smoke-chat.py
+
+      - name: "Upload smoke test logs"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-${{ matrix.rid }}
+          path: artifacts/*-smoke.log
+          if-no-files-found: ignore
 
       - name: "Upload native applications"
         uses: actions/upload-artifact@v4
         with:
-          name: chat-${{ runner.os }}
+          name: chat-${{ matrix.rid }}
           path: |
             artifacts/server/Demo.Server*
             artifacts/client/Demo.Client*

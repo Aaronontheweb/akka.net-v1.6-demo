@@ -4,12 +4,14 @@ A small chat server with multiple [Termina](https://github.com/Aaronontheweb/ter
 
 ## Run native clients
 
-Publishing requires the .NET 10 SDK from `global.json`, PowerShell 7, and the [Native AOT build prerequisites](https://learn.microsoft.com/dotnet/core/deploying/native-aot/#prerequisites).
+Publishing requires the .NET 10 SDK from `global.json`, PowerShell 7 (`pwsh` on your PATH), and the [Native AOT build prerequisites](https://learn.microsoft.com/dotnet/core/deploying/native-aot/#prerequisites).
 
 ```powershell
 # Linux x64 (use win-x64 on Windows or osx-arm64 on Apple Silicon)
 ./scripts/publish-native.ps1 -RuntimeIdentifier linux-x64
 ```
+
+The script streams compiler output and rejects additional AOT warnings. You can also invoke it explicitly as `pwsh -File ./scripts/publish-native.ps1 -RuntimeIdentifier linux-x64`.
 
 Start the server, then launch each client in its own terminal:
 
@@ -44,13 +46,13 @@ The wire protocol is unchanged: `JoinChat`, `ChangeUserName`, `LeaveChat`, `Send
 ```sh
 dotnet test -c Release
 
-# After native publishing; Linux/macOS, Python 3 standard library only
+# After native publishing; Python 3; on Windows first run: python -m pip install pywinpty==3.1.0
 python3 scripts/smoke-chat.py
 ```
 
 The Akka.Hosting.TestKit suite covers every protocol message and every polymorphic response member; records and readonly record structs; GUIDs; Unicode and long strings; empty/default IDs; enums, including unknown values; nullable fields; actor references; unknown fields and missing optional fields; malformed payloads; and Hosting serializer registration with reflection-based loading disabled. A second actor system verifies every message and response union member over an actual Artery TCP connection. Actor tests cover chat behavior, ownership validation, and local TUI input translation.
 
-The native smoke test starts the server and real TUI clients in pseudo-terminals. It verifies joining, both directions of chat, renaming, editing, leaving, clean client exits, and DeathWatch cleanup after a third client crashes. Server errors fail the test.
+The native smoke test starts the server and real TUI clients in pseudo-terminals on each supported platform. It verifies joining, both directions of chat, renaming, editing, leaving, clean client exits, and DeathWatch cleanup after a third client crashes. Server errors fail the test.
 
 ## Native AOT details
 
@@ -58,4 +60,4 @@ This demo uses **experimental Artery TCP remoting**, bound to loopback on port 8
 
 Akka.NET 1.6.0-beta3 still loads the DeathWatch failure detector by name. `ChatRemoting` preserves only `PhiAccrualFailureDetector`'s public constructors using `DynamicDependency`, so remote watches work after trimming. The remaining known dependency warning locations are recorded in `scripts/aot-warnings.txt`: classic transport/adapters, remote deployment, protobuf activation, exception deserialization, and the failure detector loader. They remain visible during publishing; `publish-native.ps1` rejects additional warning locations. The demo does not use remote deployment or custom transports/serializers.
 
-CI builds and tests on Linux and Windows, publishes both native apps, runs the native multi-client smoke test on Linux, and uploads native binaries as workflow artifacts. Windows native publishing is checked in CI; macOS is not covered by this workflow.
+CI builds and tests on Linux and Windows. A separate AOT job matrix publishes and launches the server and TUI clients on Windows x64, Linux x64, and Apple Silicon (macOS ARM64). Every target runs the same native multi-client smoke test, including crash cleanup. Windows uses ConPTY through `pywinpty`; Linux and macOS use POSIX pseudo-terminals. Native binaries and smoke logs are uploaded as workflow artifacts.
