@@ -10,12 +10,13 @@ A small chat server with multiple [Termina](https://github.com/Aaronontheweb/ter
 
 Publishing requires the .NET 10 SDK from `global.json`, PowerShell 7 (`pwsh` on your PATH), and the [Native AOT build prerequisites](https://learn.microsoft.com/dotnet/core/deploying/native-aot/#prerequisites).
 
-```powershell
-# Linux x64 (use win-x64 on Windows or osx-arm64 on Apple Silicon)
+The script streams compiler output and rejects additional AOT warnings.
+
+### On Linux
+
+```sh
 ./scripts/publish-native.ps1 -RuntimeIdentifier linux-x64
 ```
-
-The script streams compiler output and rejects additional AOT warnings. You can also invoke it explicitly as `pwsh -File ./scripts/publish-native.ps1 -RuntimeIdentifier linux-x64`.
 
 Start the server, then launch each client in its own terminal:
 
@@ -31,7 +32,29 @@ Start the server, then launch each client in its own terminal:
 ./artifacts/client/Demo.Client Bob
 ```
 
-On Windows, use `artifacts/server/Demo.Server.exe` and `artifacts/client/Demo.Client.exe`.
+### On Windows
+
+Native AOT on Windows also needs Visual Studio 2022 with the **Desktop development with C++** workload.
+
+```powershell
+pwsh -File ./scripts/publish-native.ps1 -RuntimeIdentifier win-x64
+```
+
+Start the server, then launch each client in its own terminal:
+
+```powershell
+.\artifacts\server\Demo.Server.exe
+```
+
+```powershell
+.\artifacts\client\Demo.Client.exe Alice
+```
+
+```powershell
+.\artifacts\client\Demo.Client.exe Bob
+```
+
+On Apple Silicon, publish with `-RuntimeIdentifier osx-arm64` and run the same `./artifacts/...` commands as Linux.
 
 Type a message and press Enter. Ctrl+E edits your last message: the input is prefilled, the message is highlighted yellow with a `>` marker, and a banner identifies the edit target. Enter saves; Esc cancels. Saved edits replace the original message and carry a `*` marker. `/edit text` is a shortcut for editing the last message.
 
