@@ -44,11 +44,25 @@ jobs:
       - name: "dotnet build"
         run: dotnet build -c Release
 
-      # .NET Framework tests can't run reliably on Linux, so we only do .NET 8
-
       - name: "dotnet test"
         shell: bash
-        run: dotnet test -c Release 
+        run: dotnet test -c Release --no-build
 
       - name: "dotnet pack"
         run: dotnet pack -c Release -o ./bin/nuget
+
+      - name: "Publish native server and client"
+        shell: pwsh
+        run: ./scripts/publish-native.ps1 -RuntimeIdentifier ${{ runner.os == 'Windows' && 'win-x64' || 'linux-x64' }}
+
+      - name: "Run native TUI clients over Artery"
+        if: runner.os == 'Linux'
+        run: python3 scripts/smoke-chat.py
+
+      - name: "Upload native applications"
+        uses: actions/upload-artifact@v4
+        with:
+          name: chat-${{ runner.os }}
+          path: |
+            artifacts/server/Demo.Server*
+            artifacts/client/Demo.Client*

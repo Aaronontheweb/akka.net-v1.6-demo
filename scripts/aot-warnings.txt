@@ -1,0 +1,6 @@
+IL2057: Akka.Remote.FailureDetectorLoader.Load(String,Config,ActorSystem)
+IL2057: Akka.Remote.EndpointManager.Listens.get
+IL2067: Akka.Remote.Serialization.ProtobufSerializer.FromBinary(Byte[],Type)
+IL2057: Akka.Remote.Transport.TransportAdapters.AdaptersTable()
+IL2057: Akka.Remote.Serialization.DaemonMsgCreateSerializer.PropsFromProto(PropsData)
+IL2057: Akka.Remote.Serialization.ExceptionSupport.ExceptionFromProtoNet(ExceptionData)

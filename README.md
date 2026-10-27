@@ -1,70 +1,61 @@
-# build-system-template
-Akka.NET project build system template that provides standardized build and CI/CD configuration for all Akka.NET projects.
+# Akka.NET 1.6 Native AOT chat
 
-## Build System Overview
-This repository contains our standardized build system setup that can be used across all Akka.NET projects. Here are the key components and practices we follow:
+A small chat server with multiple [Termina](https://github.com/Aaronontheweb/termina) TUI clients. Both applications compile to native executables; running them requires no .NET installation.
 
-### CI/CD Configuration
-We primarily use GitHub Actions for our CI/CD pipelines, but also maintain Azure DevOps pipeline examples. You can find the configuration examples in:
-- `.github/workflows/` - GitHub Actions pipeline examples
-- `.azuredevops/` - Azure DevOps pipeline examples
+## Run native clients
 
-### SDK Version Management
-We use `global.json` to pin the .NET SDK version for both CI/CD environments and local development. This ensures consistent builds across all environments and developers.
-
-### .NET Tools
-We use local .NET tools to enhance our build and documentation process. The tools are configured in `.config/dotnet-tools.json` and include:
-
-- [Incrementalist](https://github.com/petabridge/Incrementalist) (v1.0.0-beta4) - Used for determining which projects need to be rebuilt based on Git changes
-- [DocFx](https://dotnet.github.io/docfx/) (v2.78.3) - Used for generating documentation
-
-To restore these tools in your local environment, run:
-```powershell
-dotnet tool restore
-```
-
-This command is automatically executed in our CI/CD pipelines (both GitHub Actions and Azure DevOps) to ensure tools are available during builds.
-
-### Centralized Package and Build Management
-We utilize two key MSBuild files for centralized configuration:
-
-1. `Directory.Packages.props` - Implements [Central Package Version Management](https://learn.microsoft.com/nuget/consume-packages/Central-Package-Management) for consistent NuGet package versions across all projects in the solution.
-
-2. `Directory.Build.props` - Defines common build properties, including:
-   - Copyright and author information
-   - Source linking configuration
-   - NuGet package metadata
-   - Common compiler settings
-   - Target framework definitions
-
-### Code Coverage Configuration
-The `coverlet.runsettings` file configures code coverage collection using Coverlet, with settings for:
-- Multiple coverage report formats (JSON, Cobertura, LCOV, TeamCity, OpenCover)
-- Test assembly exclusions
-- Source linking integration
-- Performance optimizations
-
-### Release Management
-Our release process is streamlined through:
-- `RELEASE_NOTES.md` - Contains version history and release notes
-- `build.ps1` - PowerShell script that processes release notes and updates version information
-- Supporting scripts in `/scripts`:
-  - `bumpVersion.ps1` - Updates version numbers
-  - `getReleaseNotes.ps1` - Parses release notes
-
-The build system primarily relies on standard `dotnet` CLI commands, with the PowerShell scripts mainly handling release note processing and version management.
-
-### Solution Format
-We prefer the new `.slnx` XML-based solution format over the traditional `.sln` format. This requires .NET 9 SDK or later. The new format is more concise and easier to work with. You can migrate existing solutions using:
+Publishing requires the .NET 10 SDK from `global.json`, PowerShell 7, and the [Native AOT build prerequisites](https://learn.microsoft.com/dotnet/core/deploying/native-aot/#prerequisites).
 
 ```powershell
-dotnet sln migrate
+# Linux x64 (use win-x64 on Windows or osx-arm64 on Apple Silicon)
+./scripts/publish-native.ps1 -RuntimeIdentifier linux-x64
 ```
 
-For more information about the new `.slnx` format, see the [official announcement](https://devblogs.microsoft.com/dotnet/introducing-slnx-support-dotnet-cli/).
+Start the server, then launch each client in its own terminal:
 
-## Getting Started
-1. Ensure you have the correct .NET SDK version installed (check `global.json`)
-2. Clone this repository
-3. Run `dotnet build` to verify the build system
-4. Customize the configuration files for your specific project needs
+```sh
+./artifacts/server/Demo.Server
+```
+
+```sh
+./artifacts/client/Demo.Client Alice
+```
+
+```sh
+./artifacts/client/Demo.Client Bob
+```
+
+On Windows, use `artifacts/server/Demo.Server.exe` and `artifacts/client/Demo.Client.exe`.
+
+Type a message and press Enter. `/nick name` changes your display name, `/edit text` edits your last message, and `/exit` leaves. Up/Down recalls input; PageUp/PageDown scrolls the transcript. Each client gets a unique user ID and an ephemeral port, so multiple copies run together without configuration.
+
+For development, use `dotnet run --project src/Demo.Server` and `dotnet run --project src/Demo.Client -- Alice`.
+
+## Code
+
+- `Demo.Core`: the existing commands, events, value types, source-generated serializer, and shared Artery configuration.
+- `Demo.Server`: one actor tracks users and message ownership, validates commands, and broadcasts events.
+- `Demo.Client`: Termina sends local `Connect` and `Submit` messages to its local `ChatUserActor`. That actor handles the network protocol and posts display updates back through Termina's UI dispatcher. The page owns layout and input; the ViewModel keeps the last 200 transcript lines.
+
+The wire protocol is unchanged: `JoinChat`, `ChangeUserName`, `LeaveChat`, `SendMessage`, `EditMessage`, their existing events, and `ChatResponse`. Joining sends the newcomer existing users' `JoinedChat` events. Successful and rejected commands return `ChatResponse` with `OriginalCommand`. The server watches client actors to remove disconnected users. There is no persistence, message history replay, or automatic reconnect.
+
+## Test
+
+```sh
+dotnet test -c Release
+
+# After native publishing; Linux/macOS, Python 3 standard library only
+python3 scripts/smoke-chat.py
+```
+
+The Akka.Hosting.TestKit suite covers every protocol message and every polymorphic response member; records and readonly record structs; GUIDs; Unicode and long strings; empty/default IDs; enums, including unknown values; nullable fields; actor references; unknown fields and missing optional fields; malformed payloads; and Hosting serializer registration with reflection-based loading disabled. A second actor system verifies every message and response union member over an actual Artery TCP connection. Actor tests cover chat behavior, ownership validation, and local TUI input translation.
+
+The native smoke test starts the server and real TUI clients in pseudo-terminals. It verifies joining, both directions of chat, renaming, editing, leaving, clean client exits, and DeathWatch cleanup after a third client crashes. Server errors fail the test.
+
+## Native AOT details
+
+This demo uses **experimental Artery TCP remoting**, bound to loopback on port 8081. Classic DotNetty remoting is not supported under Native AOT. Both apps set `PublishAot`; Akka's NuGet build targets disable `Akka.DynamicTypeLoading` for native publishing. Application serialization uses the generated MessagePack serializer registered by `WithChatSerializer`.
+
+Akka.NET 1.6.0-beta3 still loads the DeathWatch failure detector by name. `ChatRemoting` preserves only `PhiAccrualFailureDetector`'s public constructors using `DynamicDependency`, so remote watches work after trimming. The remaining known dependency warning locations are recorded in `scripts/aot-warnings.txt`: classic transport/adapters, remote deployment, protobuf activation, exception deserialization, and the failure detector loader. They remain visible during publishing; `publish-native.ps1` rejects additional warning locations. The demo does not use remote deployment or custom transports/serializers.
+
+CI builds and tests on Linux and Windows, publishes both native apps, runs the native multi-client smoke test on Linux, and uploads native binaries as workflow artifacts. Windows native publishing is checked in CI; macOS is not covered by this workflow.

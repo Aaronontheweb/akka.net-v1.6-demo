@@ -6,6 +6,7 @@
 
     <ItemGroup>
         <PackageReference Include="Akka.Hosting"/>
+        <PackageReference Include="Akka.Remote.Hosting"/>
         <PackageReference Include="Akka.Serialization.V2"/>
         <PackageReference Include="Microsoft.Extensions.Hosting"/>
         <PackageReference Include="MessagePack" /> <!-- CVE work-around -->
