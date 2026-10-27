@@ -1,0 +1,130 @@
+using Demo.Core;
+using Demo.Core.Chat;
+using Demo.Core.Users;
+using static Demo.Core.Chat.ChatCommands;
+using static Demo.Core.Chat.ChatEvents;
+using static Demo.Core.Users.UserCommands;
+using static Demo.Core.Users.UserEvents;
+
+namespace Demo.Client;
+
+// Owned by the ViewModel and updated only on Termina's UI thread.
+public sealed class ChatClientState(UserId id)
+{
+    private readonly Dictionary<UserId, UserName> _names = new();
+    private readonly List<ChatLine> _lines = new();
+    private bool _joined;
+    private MessageId _lastMessage;
+    private MessageId? _editingMessage;
+
+    public string? EditingText { get; private set; }
+
+    public ChatTranscript Snapshot => new(_lines.Select(line =>
+        line.UserId is { } author
+            ? line with { Text = $"{NameOf(author)}: {line.Text}{(line.Edited ? " *" : "")}" }
+            : line).ToArray(), _editingMessage);
+
+    public void Apply(object message)
+    {
+        switch (message)
+        {
+            case ChatUserActor.Connecting:
+                AddNotice("Connecting…");
+                break;
+            case ChatUserActor.ConnectionFailed:
+                AddNotice("Could not join the server. /exit to close and try again.");
+                break;
+            case ChatUserActor.Disconnected:
+                _joined = false;
+                break;
+            case JoinedChat joined:
+                _names[joined.UserId] = joined.UserName;
+                AddNotice($"* {joined.UserName.Value} joined");
+                break;
+            case ChangedUserName renamed:
+                _names[renamed.UserId] = renamed.NewUserName;
+                AddNotice($"* {renamed.OldUserName.Value} is now {renamed.NewUserName.Value}");
+                break;
+            case LeftChat left:
+                // Retain the name for older messages still in the transcript.
+                AddNotice($"* {NameOf(left.UserId)} left");
+                break;
+            case MessageSent sent:
+                if (sent.UserId == id) _lastMessage = sent.MessageId;
+                AddLine(new ChatLine(sent.Message.Content, sent.UserId, sent.MessageId));
+                break;
+            case MessageEdited edited:
+                var index = _lines.FindIndex(line => line.MessageId == edited.MessageId && line.UserId == edited.UserId);
+                if (index >= 0) _lines[index] = _lines[index] with { Text = edited.NewMessage.Content, Edited = true };
+                break;
+            case ChatResponse { IsError: true } error:
+                AddNotice($"Error: {error.ErrorMessage}");
+                break;
+            case ChatResponse { OriginalCommand: JoinChat }:
+                _joined = true;
+                AddNotice("Connected. Type a message, /nick name, /edit text, or /exit.");
+                break;
+            case ChatResponse { OriginalCommand: EditMessage edit } when edit.MessageId == _editingMessage:
+                CancelEdit();
+                break;
+        }
+    }
+
+    public object? Submit(string text)
+    {
+        text = text.Trim();
+        if (text.Length == 0) return null;
+        if (text == "/exit") return new ChatUserActor.Disconnect();
+        if (!_joined)
+        {
+            AddNotice("Waiting for the server…");
+            return null;
+        }
+        if (_editingMessage is { } editing)
+            return new EditMessage(editing, id, new MessageContent(text));
+        if (text.StartsWith("/nick ", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(text[6..]))
+            return new ChangeUserName(id, new UserName(text[6..].Trim()));
+        if (text.StartsWith("/edit ", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(text[6..]))
+        {
+            if (_lastMessage != MessageId.Empty)
+                return new EditMessage(_lastMessage, id, new MessageContent(text[6..].Trim()));
+            AddNotice("Send a message before editing it.");
+            return null;
+        }
+        if (text.StartsWith('/'))
+        {
+            AddNotice("Commands: /nick name, /edit text (your last message), /exit");
+            return null;
+        }
+        return new SendMessage(MessageId.Next(), id, new MessageContent(text));
+    }
+
+    public void BeginEdit()
+    {
+        if (!_joined) return;
+        var line = _lines.LastOrDefault(line => line.UserId == id && line.MessageId is not null);
+        if (line is null)
+        {
+            AddNotice("Send a message before editing it.");
+            return;
+        }
+        _editingMessage = line.MessageId;
+        EditingText = line.Text;
+    }
+
+    public void CancelEdit()
+    {
+        _editingMessage = null;
+        EditingText = null;
+    }
+
+    private void AddNotice(string text) => AddLine(new ChatLine(text));
+
+    private void AddLine(ChatLine line)
+    {
+        _lines.Add(line);
+        if (_lines.Count > 200) _lines.RemoveAt(0);
+    }
+
+    private string NameOf(UserId author) => _names.TryGetValue(author, out var name) ? name.Value : author.Value;
+}
