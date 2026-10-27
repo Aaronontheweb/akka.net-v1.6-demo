@@ -87,7 +87,3 @@ This demo uses **experimental Artery TCP remoting**, bound to loopback on port 8
 Akka.NET 1.6.0-beta3 still loads the DeathWatch failure detector by name. `ChatRemoting` preserves only `PhiAccrualFailureDetector`'s public constructors using `DynamicDependency`, so remote watches work after trimming. The remaining known dependency warning locations are recorded in `scripts/aot-warnings.txt`: classic transport/adapters, remote deployment, protobuf activation, exception deserialization, and the failure detector loader. They remain visible during publishing; `publish-native.ps1` rejects additional warning locations. The demo does not use remote deployment or custom transports/serializers.
 
 CI builds and tests on Linux and Windows. A separate AOT job matrix publishes and launches the server and TUI clients on Windows x64, Linux x64, and Apple Silicon (macOS ARM64). Every target runs the same native multi-client smoke test, including crash cleanup. Windows uses ConPTY through `pywinpty`; Linux and macOS use POSIX pseudo-terminals. Native binaries and smoke logs are uploaded as workflow artifacts.
-
-## Known Artery disconnect behavior
-
-With Akka.NET 1.6.0-beta3, the server can keep retrying its control connection after a client leaves and shuts down gracefully. The chat leave succeeds, but repeated reconnect warnings continue. This also reproduces without Native AOT or Termina. See the [diagnostic, source analysis, and proposed regression coverage](docs/artery-disconnect.md); this demo does not suppress the warnings or include an upstream transport fix.
