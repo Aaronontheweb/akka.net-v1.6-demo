@@ -2,6 +2,10 @@
 
 A small chat server with multiple [Termina](https://github.com/Aaronontheweb/termina) TUI clients. Both applications compile to native executables; running them requires no .NET installation.
 
+![Two native chat clients chatting, renaming, and editing side by side](docs/demo/chat.gif)
+
+[Replay or re-record the VHS demo](docs/demo/README.md).
+
 ## Run native clients
 
 Publishing requires the .NET 10 SDK from `global.json`, PowerShell 7 (`pwsh` on your PATH), and the [Native AOT build prerequisites](https://learn.microsoft.com/dotnet/core/deploying/native-aot/#prerequisites).
@@ -35,6 +39,26 @@ Type a message and press Enter. Ctrl+E edits your last message: the input is pre
 
 For development, use `dotnet run --project src/Demo.Server` and `dotnet run --project src/Demo.Client -- Alice`.
 
+## Native executable sizes
+
+Measured from the Release Native AOT executables in [CI run 40575366054](https://github.com/Aaronontheweb/akka.net-v1.6-demo/actions/runs/40575366054), commit `a936c04`, on October 27, 2026:
+
+| Target | Server | Termina client |
+| --- | ---: | ---: |
+| Linux x64 | 12.44 MiB (13,043,632 bytes) | 12.89 MiB (13,514,896 bytes) |
+| Windows x64 | 14.08 MiB (14,764,544 bytes) | 14.59 MiB (15,296,512 bytes) |
+| Apple Silicon ARM64 | 12.08 MiB (12,667,192 bytes) | 12.52 MiB (13,131,752 bytes) |
+
+These are executable sizes, excluding separate `.dbg`, `.pdb`, and `.dSYM` debug symbols and archive compression. One MiB is 1,048,576 bytes. Sizes vary with the SDK, target, and code changes.
+
+After publishing, capture a fresh size report (use the runtime identifier you published):
+
+```powershell
+pwsh -File ./scripts/measure-native.ps1 -RuntimeIdentifier linux-x64
+```
+
+The report is written to `artifacts/native-sizes.md`. CI captures it for every target and includes it in the workflow summary and native application artifacts.
+
 ## Code
 
 - `Demo.Core`: the existing commands, events, value types, source-generated serializer, and shared Artery configuration.
@@ -63,3 +87,7 @@ This demo uses **experimental Artery TCP remoting**, bound to loopback on port 8
 Akka.NET 1.6.0-beta3 still loads the DeathWatch failure detector by name. `ChatRemoting` preserves only `PhiAccrualFailureDetector`'s public constructors using `DynamicDependency`, so remote watches work after trimming. The remaining known dependency warning locations are recorded in `scripts/aot-warnings.txt`: classic transport/adapters, remote deployment, protobuf activation, exception deserialization, and the failure detector loader. They remain visible during publishing; `publish-native.ps1` rejects additional warning locations. The demo does not use remote deployment or custom transports/serializers.
 
 CI builds and tests on Linux and Windows. A separate AOT job matrix publishes and launches the server and TUI clients on Windows x64, Linux x64, and Apple Silicon (macOS ARM64). Every target runs the same native multi-client smoke test, including crash cleanup. Windows uses ConPTY through `pywinpty`; Linux and macOS use POSIX pseudo-terminals. Native binaries and smoke logs are uploaded as workflow artifacts.
+
+## Known Artery disconnect behavior
+
+With Akka.NET 1.6.0-beta3, the server can keep retrying its control connection after a client leaves and shuts down gracefully. The chat leave succeeds, but repeated reconnect warnings continue. This also reproduces without Native AOT or Termina. See the [diagnostic, source analysis, and proposed regression coverage](docs/artery-disconnect.md); this demo does not suppress the warnings or include an upstream transport fix.
