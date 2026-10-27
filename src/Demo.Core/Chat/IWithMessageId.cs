@@ -21,6 +21,7 @@ public readonly record struct MessageId([property: AkkaField(0)] Guid Value)
 /// <summary>
 /// A non-empty, 
 /// </summary>
+[AkkaSerializable]
 public sealed record MessageContent
 {
     [AkkaField(0)]
