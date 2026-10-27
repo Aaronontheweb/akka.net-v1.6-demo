@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <Description>Shared messages and data types.</Description>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Akka.Hosting"/>
+        <PackageReference Include="Akka.Serialization.V2"/>
+        <PackageReference Include="Microsoft.Extensions.Hosting"/>
+        <PackageReference Include="MessagePack" /> <!-- CVE work-around -->
+    </ItemGroup>
+
+    <ItemGroup>
+        <Using Include="Akka.Serialization.V2" />
+    </ItemGroup>
+
+</Project>
