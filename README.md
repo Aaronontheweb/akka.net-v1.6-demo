@@ -29,7 +29,9 @@ Start the server, then launch each client in its own terminal:
 
 On Windows, use `artifacts/server/Demo.Server.exe` and `artifacts/client/Demo.Client.exe`.
 
-Type a message and press Enter. `/nick name` changes your display name, `/edit text` edits your last message, and `/exit` leaves. Up/Down recalls input; PageUp/PageDown scrolls the transcript. Each client gets a unique user ID and an ephemeral port, so multiple copies run together without configuration.
+Type a message and press Enter. Ctrl+E edits your last message: the input is prefilled, the message is highlighted yellow with a `>` marker, and a banner identifies the edit target. Enter saves; Esc cancels. Saved edits replace the original message and carry a `*` marker. `/edit text` is a shortcut for editing the last message.
+
+`/nick name` changes your display name, including on your older retained messages in every connected client. Ctrl+C or `/exit` leaves and closes the client, including while editing. Up/Down recalls input; PageUp/PageDown scrolls the transcript. Each client gets a unique user ID and an ephemeral port, so multiple copies run together without configuration.
 
 For development, use `dotnet run --project src/Demo.Server` and `dotnet run --project src/Demo.Client -- Alice`.
 
@@ -37,7 +39,7 @@ For development, use `dotnet run --project src/Demo.Server` and `dotnet run --pr
 
 - `Demo.Core`: the existing commands, events, value types, source-generated serializer, and shared Artery configuration.
 - `Demo.Server`: one actor tracks users and message ownership, validates commands, and broadcasts events.
-- `Demo.Client`: Termina sends local `Connect` and `Submit` messages to its local `ChatUserActor`. That actor handles the network protocol and posts display updates back through Termina's UI dispatcher. The page owns layout and input; the ViewModel keeps the last 200 transcript lines.
+- `Demo.Client`: Termina sends local input and edit messages to its local `ChatUserActor`. That actor owns the last 200 transcript entries, tracks messages by ID and authors by user ID, and handles the network protocol. It sends local UI snapshots through Termina's UI dispatcher. The page owns layout and input; the ViewModel holds the current snapshot and edit input state.
 
 The wire protocol is unchanged: `JoinChat`, `ChangeUserName`, `LeaveChat`, `SendMessage`, `EditMessage`, their existing events, and `ChatResponse`. Joining sends the newcomer existing users' `JoinedChat` events. Successful and rejected commands return `ChatResponse` with `OriginalCommand`. The server watches client actors to remove disconnected users. There is no persistence, message history replay, or automatic reconnect.
 
@@ -52,7 +54,7 @@ python3 scripts/smoke-chat.py
 
 The Akka.Hosting.TestKit suite covers every protocol message and every polymorphic response member; records and readonly record structs; GUIDs; Unicode and long strings; empty/default IDs; enums, including unknown values; nullable fields; actor references; unknown fields and missing optional fields; malformed payloads; and Hosting serializer registration with reflection-based loading disabled. A second actor system verifies every message and response union member over an actual Artery TCP connection. Actor tests cover chat behavior, ownership validation, and local TUI input translation.
 
-The native smoke test starts the server and real TUI clients in pseudo-terminals on each supported platform. It verifies joining, both directions of chat, renaming, editing, leaving, clean client exits, and DeathWatch cleanup after a third client crashes. Server errors fail the test.
+The native smoke test starts the server and real TUI clients in pseudo-terminals on each supported platform. It verifies joining, chat, relabeling older messages after a rename, in-place edits, edit highlighting and cancellation, single-press Ctrl+C in normal chat and edit mode, `/exit`, and DeathWatch cleanup after a client crashes. CI runs it with both default and raw terminal input. Server errors fail the test.
 
 ## Native AOT details
 

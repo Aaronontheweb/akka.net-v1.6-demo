@@ -8,8 +8,8 @@ namespace Demo.Client;
 public sealed class ChatViewModel(IRequiredActor<ChatUserActor> requiredUser) : ReactiveViewModel
 {
     private IActorRef _user = ActorRefs.Nobody;
-    private readonly Queue<string> _lines = new();
-    public ReactiveProperty<string> Transcript { get; } = new("");
+    public ReactiveProperty<ChatTranscript> Transcript { get; } = new(new ChatTranscript([]));
+    public ReactiveProperty<string?> EditingText { get; } = new(null);
 
     public override void OnActivated() => _ = ConnectAsync();
 
@@ -21,27 +21,33 @@ public sealed class ChatViewModel(IRequiredActor<ChatUserActor> requiredUser) : 
             Post(() =>
             {
                 _user = user;
-                user.Tell(new ChatUserActor.Connect(Display, () => Post(Shutdown)));
+                user.Tell(new ChatUserActor.Connect(Display, () => Post(Shutdown),
+                    text => Post(() => EditingText.Value = text)));
             });
         }
         catch (Exception error)
         {
-            Post(() => Transcript.Value = $"Could not start chat: {error.Message}");
+            Post(() => Transcript.Value = new ChatTranscript([new ChatLine($"Could not start chat: {error.Message}")]));
         }
     }
 
-    private void Display(string line) => Post(() =>
-    {
-        _lines.Enqueue(line);
-        while (_lines.Count > 200) _lines.Dequeue();
-        Transcript.Value = string.Join('\n', _lines);
-    });
+    private void Display(ChatTranscript transcript) => Post(() => Transcript.Value = transcript);
 
     public void Submit(string text) => _user.Tell(new ChatUserActor.Submit(text));
+
+    public void BeginEdit() => _user.Tell(new ChatUserActor.BeginEdit());
+    public void CancelEdit() => _user.Tell(new ChatUserActor.CancelEdit());
+
+    public override void RequestShutdown()
+    {
+        if (_user.Equals(ActorRefs.Nobody)) Shutdown();
+        else _user.Tell(new ChatUserActor.Disconnect());
+    }
 
     public override void Dispose()
     {
         Transcript.Dispose();
+        EditingText.Dispose();
         base.Dispose();
     }
 }

@@ -92,11 +92,17 @@ class Client:
                 raise AssertionError(f"{self.name} exited before displaying {text!r}:\n{screen_text(self.output)}")
             self.output.extend(data)
 
-    def send(self, text):
+    def press(self, keys):
         if WINDOWS:
-            self.process.write(text + "\r")
+            self.process.write(keys)
         else:
-            os.write(self.master, (text + "\r").encode())
+            os.write(self.master, keys.encode())
+
+    def send(self, text):
+        self.press(text + "\r")
+
+    def assert_no_line(self, text):
+        assert text not in [line.strip() for line in screen_text(self.output).splitlines()], text
 
     def wait_exit(self, timeout=15):
         deadline = time.monotonic() + timeout
@@ -127,7 +133,8 @@ def main():
     executable_suffix = ".exe" if WINDOWS else ""
     client_binary = root / f"client/Demo.Client{executable_suffix}"
     clients = []
-    with open(root / "server-smoke.log", "w+") as log:
+    log_name = "raw-server-smoke.log" if os.environ.get("TERMINA_RAW_INPUT") == "1" else "server-smoke.log"
+    with open(root / log_name, "w+") as log:
         server = subprocess.Popen([str(root / f"server/Demo.Server{executable_suffix}")], stdout=log, stderr=log)
         try:
             deadline = time.monotonic() + 20
@@ -152,29 +159,59 @@ def main():
             alice.send("Hello from Alice")
             alice.wait_for("Alice: Hello from Alice")
             bob.wait_for("Alice: Hello from Alice")
+            bob.send("Earlier from Bob")
+            alice.wait_for("Bob: Earlier from Bob")
+            bob.wait_for("Bob: Earlier from Bob")
             bob.send("/nick Robert")
             alice.wait_for("Bob is now Robert")
             bob.wait_for("Bob is now Robert")
+            alice.wait_for("Robert: Earlier from Bob")
+            bob.wait_for("Robert: Earlier from Bob")
+            alice.assert_no_line("Bob: Earlier from Bob")
+            bob.assert_no_line("Bob: Earlier from Bob")
             bob.send("Hello from Robert")
             alice.wait_for("Robert: Hello from Robert")
             bob.wait_for("Robert: Hello from Robert")
-            alice.send("/edit Hello edited")
-            alice.wait_for("Alice (edited): Hello edited")
-            bob.wait_for("Alice (edited): Hello edited")
-            bob.send("/exit")
-            alice.wait_for("Robert left")
-            assert bob.wait_exit() == 0
+            alice.press("\x05")  # Ctrl+E: edit with prefilled input and a highlighted row.
+            alice.wait_for("Editing your last message: Hello from Alice")
+            alice.wait_for("> Alice: Hello from Alice")
+            alice.press("\x1b")  # Escape cancels without changing the message.
+            alice.wait_for("Ctrl+E: edit last message")
+            alice.press("\x05")
+            alice.wait_for("Editing your last message: Hello from Alice")
+            alice.send(" revised")  # Appends to the prefilled original text.
+            alice.wait_for("Alice: Hello from Alice revised *")
+            bob.wait_for("Alice: Hello from Alice revised *")
+            alice.wait_for("Ctrl+E: edit last message")
+            alice.assert_no_line("Alice: Hello from Alice")
+            bob.assert_no_line("Alice: Hello from Alice")
+            alice.send("/nick Alicia")
+            alice.wait_for("Alicia: Hello from Alice revised *")
+            bob.wait_for("Alicia: Hello from Alice revised *")
 
             charlie = Client(client_binary, "Charlie")
             clients.append(charlie)
             charlie.wait_for("Connected.")
             alice.wait_for("Charlie joined")
-            charlie.crash()
-            alice.wait_for("Charlie left", timeout=40)
+            charlie.press("\x03")  # Ctrl+C exits from normal chat.
+            assert charlie.wait_exit() == 0
+            alice.wait_for("Charlie left")
 
-            alice.send("/exit")
+            dave = Client(client_binary, "Dave")
+            clients.append(dave)
+            dave.wait_for("Connected.")
+            alice.wait_for("Dave joined")
+            dave.crash()
+            alice.wait_for("Dave left", timeout=40)
+
+            alice.press("\x05")
+            alice.wait_for("Editing your last message: Hello from Alice revised")
+            alice.press("\x03")  # Ctrl+C also exits while editing.
             assert alice.wait_exit() == 0
-            print("PASS: native TUI clients chatted, renamed, edited, left, and detected a crashed client over Artery.")
+            bob.wait_for("Alicia left")
+            bob.send("/exit")
+            assert bob.wait_exit() == 0
+            print("PASS: native TUI chat, in-place edits, rename history, edit guidance, Ctrl+C, and crash cleanup.")
         finally:
             for client in clients:
                 client.close()
