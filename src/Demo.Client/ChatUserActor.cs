@@ -9,19 +9,16 @@ namespace Demo.Client;
 
 public sealed class ChatUserActor : ReceiveActor, IWithTimers
 {
-    // This channel and these notifications stay inside the client process.
-    public sealed record Connect(ChannelWriter<object> Events);
+    // These messages and the channel stay inside the client process.
+    public sealed record Connect(ChannelWriter<ClientEvent> Events);
     public sealed record Disconnect;
-    public sealed record Connecting;
-    public sealed record ConnectionFailed;
-    public sealed record Disconnected;
     private sealed record ConnectionTimedOut;
     private sealed record ExitTimedOut;
     private enum TimerKey { Connection, Exit }
 
-    private sealed class Connection(ChannelWriter<object> events)
+    private sealed class Connection(ChannelWriter<ClientEvent> events)
     {
-        public ChannelWriter<object> Events { get; } = events;
+        public ChannelWriter<ClientEvent> Events { get; } = events;
         public bool Joined { get; set; }
     }
 
@@ -42,20 +39,20 @@ public sealed class ChatUserActor : ReceiveActor, IWithTimers
         {
             if (_connection is not null) return;
             _connection = new Connection(message.Events);
-            Publish(new Connecting());
+            Publish(new ClientEvent.Connecting());
             _server.Tell(new JoinChat(_id, _name, Self));
             Timers.StartSingleTimer(TimerKey.Connection, new ConnectionTimedOut(), TimeSpan.FromSeconds(10));
         });
-        Receive<ConnectionTimedOut>(_ => Publish(new ConnectionFailed()));
+        Receive<ConnectionTimedOut>(_ => Publish(new ClientEvent.ConnectionFailed()));
         Receive<ExitTimedOut>(_ => FinishDisconnect());
         Receive<Disconnect>(_ => DisconnectFromChat());
         Receive<IChatCommand>(ForwardCommand);
         Receive<ChangeUserName>(ForwardCommand);
-        Receive<IChatEvent>(Publish);
-        Receive<IUserEvent>(Publish);
+        Receive<IChatEvent>(message => Publish(new ClientEvent.Chat(message)));
+        Receive<IUserEvent>(message => Publish(new ClientEvent.User(message)));
         Receive<ChatResponse>(response =>
         {
-            Publish(response);
+            Publish(new ClientEvent.Response(response));
             if (response.IsError || _connection is null) return;
             switch (response.OriginalCommand)
             {
@@ -70,9 +67,9 @@ public sealed class ChatUserActor : ReceiveActor, IWithTimers
         });
     }
 
-    private void Publish(object message) => _connection?.Events.TryWrite(message);
+    private void Publish(ClientEvent message) => _connection?.Events.TryWrite(message);
 
-    private void ForwardCommand(object command)
+    private void ForwardCommand(IWithUserId command)
     {
         if (_connection is { Joined: true } && !Timers.IsTimerActive(TimerKey.Exit))
             _server.Tell(command);
@@ -90,7 +87,7 @@ public sealed class ChatUserActor : ReceiveActor, IWithTimers
     private void FinishDisconnect()
     {
         Timers.CancelAll();
-        Publish(new Disconnected());
+        Publish(new ClientEvent.Disconnected());
         _connection?.Events.TryComplete();
         _connection = null;
     }

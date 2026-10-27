@@ -24,47 +24,47 @@ public sealed class ChatClientState(UserId id)
             ? line with { Text = $"{NameOf(author)}: {line.Text}{(line.Edited ? " *" : "")}" }
             : line).ToArray(), _editingMessage);
 
-    public void Apply(object message)
+    public void Apply(ClientEvent message)
     {
         switch (message)
         {
-            case ChatUserActor.Connecting:
+            case ClientEvent.Connecting:
                 AddNotice("Connecting…");
                 break;
-            case ChatUserActor.ConnectionFailed:
+            case ClientEvent.ConnectionFailed:
                 AddNotice("Could not join the server. /exit to close and try again.");
                 break;
-            case ChatUserActor.Disconnected:
+            case ClientEvent.Disconnected:
                 _joined = false;
                 break;
-            case JoinedChat joined:
+            case ClientEvent.User { Event: JoinedChat joined }:
                 _names[joined.UserId] = joined.UserName;
                 AddNotice($"* {joined.UserName.Value} joined");
                 break;
-            case ChangedUserName renamed:
+            case ClientEvent.User { Event: ChangedUserName renamed }:
                 _names[renamed.UserId] = renamed.NewUserName;
                 AddNotice($"* {renamed.OldUserName.Value} is now {renamed.NewUserName.Value}");
                 break;
-            case LeftChat left:
+            case ClientEvent.User { Event: LeftChat left }:
                 // Retain the name for older messages still in the transcript.
                 AddNotice($"* {NameOf(left.UserId)} left");
                 break;
-            case MessageSent sent:
+            case ClientEvent.Chat { Event: MessageSent sent }:
                 if (sent.UserId == id) _lastMessage = sent.MessageId;
                 AddLine(new ChatLine(sent.Message.Content, sent.UserId, sent.MessageId));
                 break;
-            case MessageEdited edited:
+            case ClientEvent.Chat { Event: MessageEdited edited }:
                 var index = _lines.FindIndex(line => line.MessageId == edited.MessageId && line.UserId == edited.UserId);
                 if (index >= 0) _lines[index] = _lines[index] with { Text = edited.NewMessage.Content, Edited = true };
                 break;
-            case ChatResponse { IsError: true } error:
+            case ClientEvent.Response { Value: { IsError: true } error }:
                 AddNotice($"Error: {error.ErrorMessage}");
                 break;
-            case ChatResponse { OriginalCommand: JoinChat }:
+            case ClientEvent.Response { Value.OriginalCommand: JoinChat }:
                 _joined = true;
                 AddNotice("Connected. Type a message, /nick name, /edit text, or /exit.");
                 break;
-            case ChatResponse { OriginalCommand: EditMessage edit } when edit.MessageId == _editingMessage:
+            case ClientEvent.Response { Value.OriginalCommand: EditMessage edit } when edit.MessageId == _editingMessage:
                 CancelEdit();
                 break;
         }

@@ -10,7 +10,7 @@ namespace Demo.Client;
 public sealed class ChatViewModel(IRequiredActor<ChatUserActor> requiredUser, UserId id) : ReactiveViewModel
 {
     private readonly ChatClientState _state = new(id);
-    private readonly Channel<object> _events = Channel.CreateUnbounded<object>();
+    private readonly Channel<ClientEvent> _events = Channel.CreateUnbounded<ClientEvent>();
     private readonly CancellationTokenSource _lifetime = new();
     private IActorRef _user = ActorRefs.Nobody;
     private Task? _reader;
