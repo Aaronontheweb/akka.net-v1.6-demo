@@ -82,21 +82,32 @@ public sealed class ChatClientState(UserId id)
         }
         if (_editingMessage is { } editing)
             return new EditMessage(editing, id, new MessageContent(text));
-        if (text.StartsWith("/nick ", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(text[6..]))
-            return new ChangeUserName(id, new UserName(text[6..].Trim()));
-        if (text.StartsWith("/edit ", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(text[6..]))
+        return text.StartsWith('/')
+            ? ParseCommand(text)
+            : new SendMessage(MessageId.Next(), id, new MessageContent(text));
+    }
+
+    private object? ParseCommand(string text)
+    {
+        switch (text.Split(' ', 2, StringSplitOptions.TrimEntries))
         {
-            if (_lastMessage != MessageId.Empty)
-                return new EditMessage(_lastMessage, id, new MessageContent(text[6..].Trim()));
-            AddNotice("Send a message before editing it.");
-            return null;
+            case ["/nick", { Length: > 0 } name]:
+                return new ChangeUserName(id, new UserName(name));
+            case ["/edit", { Length: > 0 } content]:
+                return EditLastMessage(content);
+            default:
+                AddNotice("Commands: /nick name, /edit text (your last message), /exit");
+                return null;
         }
-        if (text.StartsWith('/'))
-        {
-            AddNotice("Commands: /nick name, /edit text (your last message), /exit");
-            return null;
-        }
-        return new SendMessage(MessageId.Next(), id, new MessageContent(text));
+    }
+
+    private EditMessage? EditLastMessage(string text)
+    {
+        if (_lastMessage != MessageId.Empty)
+            return new EditMessage(_lastMessage, id, new MessageContent(text));
+
+        AddNotice("Send a message before editing it.");
+        return null;
     }
 
     public void BeginEdit()
