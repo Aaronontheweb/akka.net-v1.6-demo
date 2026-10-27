@@ -16,6 +16,11 @@ public static class AkkaHostingExtensionMethods
 {
     public static AkkaConfigurationBuilder WithChatSerializer(this AkkaConfigurationBuilder builder)
     {
-        z
+        var registration = ChatSerializer.CreateRegistration();
+
+        return builder.WithCustomSerializer(
+            registration.Alias,
+            registration.UseFor,
+            system => registration.CreateDetails(system).Serializer);
     }
 }
