@@ -25,7 +25,7 @@ public sealed class ChatUserTests : Akka.Hosting.TestKit.TestKit
         var display = CreateTestProbe();
         var id = new UserId("alice");
         var user = Sys.ActorOf(Props.Create(() => new ChatUserActor(server.Ref.Path.ToString(), id, new UserName("Alice"))));
-        user.Tell(new ChatUserActor.Connect(line => display.Ref.Tell(line), () => display.Ref.Tell("exited")));
+        user.Tell(new ChatUserActor.Connect(transcript => display.Ref.Tell(transcript.Text), () => display.Ref.Tell("exited")));
         var join = server.ExpectMsg<JoinChat>(cancellationToken: cancellation);
         Assert.Equal(user, join.UserActor);
         Assert.Equal(user, server.LastSender);
@@ -33,15 +33,15 @@ public sealed class ChatUserTests : Akka.Hosting.TestKit.TestKit
 
         user.Tell(new JoinedChat(id, join.UserName), server.Ref);
         user.Tell(new ChatResponse(ChatResponseCode.Success, OriginalCommand: join), server.Ref);
-        display.ExpectMsg("* Alice joined", cancellationToken: cancellation);
-        display.ExpectMsg<string>(text => text.StartsWith("Connected."), cancellationToken: cancellation);
+        display.ExpectMsg<string>(text => text.Contains("* Alice joined"), cancellationToken: cancellation);
+        display.ExpectMsg<string>(text => text.Contains("Connected."), cancellationToken: cancellation);
 
         user.Tell(new ChatUserActor.Submit("hello"));
         var send = server.ExpectMsg<SendMessage>(cancellationToken: cancellation);
         Assert.Equal(id, send.UserId);
         Assert.Equal("hello", send.Message.Content);
         user.Tell(new MessageSent(send.MessageId, id, send.Message), server.Ref);
-        display.ExpectMsg("Alice: hello", cancellationToken: cancellation);
+        display.ExpectMsg<string>(text => text.Contains("Alice: hello"), cancellationToken: cancellation);
 
         user.Tell(new ChatUserActor.Submit("/edit revised"));
         var edit = server.ExpectMsg<EditMessage>(cancellationToken: cancellation);
@@ -77,7 +77,7 @@ public sealed class ChatUserTests : Akka.Hosting.TestKit.TestKit
         var server = CreateTestProbe();
         var display = CreateTestProbe();
         var user = Sys.ActorOf(Props.Create(() => new ChatUserActor(server.Ref.Path.ToString(), new UserId("a"), new UserName("Alice"))));
-        user.Tell(new ChatUserActor.Connect(line => display.Ref.Tell(line), () => display.Ref.Tell("exited")));
+        user.Tell(new ChatUserActor.Connect(transcript => display.Ref.Tell(transcript.Text), () => display.Ref.Tell("exited")));
         user.Tell(new ChatUserActor.Submit("/exit"));
         display.ExpectMsg("Connecting…", cancellationToken: TestContext.Current.CancellationToken);
         display.ExpectMsg("exited", cancellationToken: TestContext.Current.CancellationToken);

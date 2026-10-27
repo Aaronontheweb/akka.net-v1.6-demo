@@ -16,6 +16,7 @@ public static class ChatRemoting
             .AddHocon($$"""
                 akka.remote.artery {
                     enabled = on
+                    transport = tcp
                     canonical.hostname = "127.0.0.1"
                     canonical.port = {{port}}
                 }

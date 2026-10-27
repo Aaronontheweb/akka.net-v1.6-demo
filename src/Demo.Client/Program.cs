@@ -30,7 +30,17 @@ builder.Services.AddAkka("ChatClient", akka => akka
         system.ActorOf(Props.Create(() => new ChatUserActor(ChatRemoting.ServerPath, id, name)), "user"))));
 builder.Services.AddTermina("/chat", termina => termina.RegisterRoute<ChatPage, ChatViewModel>(
     "/chat", _ => new ChatPage(),
-    services => new ChatViewModel(services.GetRequiredService<IRequiredActor<ChatUserActor>>())));
+    services => new ChatViewModel(services.GetRequiredService<IRequiredActor<ChatUserActor>>()))
+    .ConfigureRuntime(options => options.CtrlCHandlingMode = CtrlCHandlingMode.Disabled));
 
-await builder.Build().RunAsync();
+var previousControlC = Console.TreatControlCAsInput;
+try
+{
+    Console.TreatControlCAsInput = true;
+    await builder.Build().RunAsync();
+}
+finally
+{
+    Console.TreatControlCAsInput = previousControlC;
+}
 return 0;
