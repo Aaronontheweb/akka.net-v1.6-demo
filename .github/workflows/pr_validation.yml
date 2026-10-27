@@ -102,6 +102,10 @@ jobs:
         shell: pwsh
         run: ./scripts/publish-native.ps1 -RuntimeIdentifier ${{ matrix.rid }}
 
+      - name: "Measure native executables"
+        shell: pwsh
+        run: ./scripts/measure-native.ps1 -RuntimeIdentifier ${{ matrix.rid }}
+
       - name: "Run native TUI clients over Artery"
         run: python scripts/smoke-chat.py
 
@@ -125,3 +129,4 @@ jobs:
           path: |
             artifacts/server/Demo.Server*
             artifacts/client/Demo.Client*
+            artifacts/native-sizes.md
