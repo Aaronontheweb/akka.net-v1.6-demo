@@ -116,14 +116,14 @@ jobs:
 
       - name: "Upload smoke test logs"
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-${{ matrix.rid }}
           path: artifacts/*-smoke.log
           if-no-files-found: ignore
 
       - name: "Upload native applications"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: chat-${{ matrix.rid }}
           path: |
