@@ -1,4 +1,6 @@
+using Akka.Actor;
 using Akka.Hosting;
+using Akka.Serialization;
 using Demo.Core.Chat;
 using Demo.Core.Users;
 
@@ -9,18 +11,11 @@ namespace Demo.Core;
 public sealed partial class ChatSerializer : AkkaSerializer
 {
     // Used for Akka.Hosting registration
-    public static partial SerializerRegistration CreateRegistration();
+    public static partial SerializerDetails CreateSerializerDetails(ExtendedActorSystem system);
 }
 
 public static class AkkaHostingExtensionMethods
 {
     public static AkkaConfigurationBuilder WithChatSerializer(this AkkaConfigurationBuilder builder)
-    {
-        var registration = ChatSerializer.CreateRegistration();
-
-        return builder.WithCustomSerializer(
-            registration.Alias,
-            registration.UseFor,
-            system => registration.CreateDetails(system).Serializer);
-    }
+        => builder.WithCustomSerializer(ChatSerializer.CreateSerializerDetails);
 }
