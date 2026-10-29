@@ -10,7 +10,7 @@
     <PackageVersion Include="Akka.Serialization.V2" Version="$(AkkaHostingVersion)"/>
     <PackageVersion Include="Akka.Remote.Hosting" Version="$(AkkaHostingVersion)"/>
     <PackageVersion Include="Akka.Hosting.TestKit" Version="$(AkkaHostingVersion)"/>
-    <PackageVersion Include="Termina" Version="0.17.0"/>
+    <PackageVersion Include="Termina" Version="0.17.1"/>
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1"/>
     <PackageVersion Include="xunit.v3" Version="3.2.2"/>
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5"/>
